@@ -9,9 +9,9 @@ from loss_functions import *
 from params import *
 
 
-class G_scale_LSTM:
+class G_scale_LSTM_high:
     def __init__ (self,scope,scale_index,height,width,length,batch_size,layer_num_lstm,kernel_size,kernel_num
-        ,future_seq_length,flag_for_future,scope_string):
+        ,future_seq_length,low_scale_graph,scope_string):
         """ initialize the network
         @param scale_index: The index for the scale of temporal pyramid
         @height: height of the input (scaler)
@@ -22,8 +22,8 @@ class G_scale_LSTM:
         @kernel_size: list of kernel, should be consistent with layer_num
         @kernel_num: list of kernel number, should be consistent with layer_num
         @future_seq_length: length of predicted frames
-        @flag_for_future: flags of whether condi
-        """
+        @low_scale_graph : lower scale generative model graph
+	"""
 
 	self.scope = scope
         self.scale_index = scale_index
@@ -36,9 +36,10 @@ class G_scale_LSTM:
         self.kernel_num = kernel_num
         self.future_seq_length = future_seq_length
 	self.scope_string = scope_string
-        self.define_graph()
+	
+        self.define_graph(low_scale_graph)
 
-    def define_graph(self):
+    def define_graph(self,low_scale_graph):
         """ define a Bidirectional LSTM and concatenated feature for MLP
         """
         lstm_encode = []
@@ -56,6 +57,17 @@ class G_scale_LSTM:
             self.future_frames = tf.placeholder(
                 tf.float32, shape=[FLAGS.batch_size, self.future_seq_length, self.height, self.width,1])
 
+	    # if joint training
+	    if low_scale_graph is None: 
+	        self.input_frames_low_scale = tf.placeholder(\
+		tf.float32, shape=[None, self.length, self.height, self.width,1])
+	    
+	        self.future_frames_low_scale = tf.placeholder(\
+                tf.float32, shape=[None, self.future_seq_length, self.height, self.width,1])
+	    else:
+		self.input_frames_low_scale= temporal_up_scale(low_scale_graph.decodes)
+		self.future_frames_low_scale = temporal_up_scale(low_scale_graph.preds)
+	
         with tf.variable_scope("G_scale_{}".format(self.scale_index)):
 
             for layer_id_, kernel_, kernel_num_ in zip(xrange(self.layer_num_lstm),self.kernel_size,self.kernel_num):
@@ -85,44 +97,48 @@ class G_scale_LSTM:
                 lstm_decode.append(temp_cell)
                 lstm_decode_state.append(temp_state)
 		
-        input_ = self.input_frames[:,0,:,:,:]
+        input_ = tf.concat(3,[self.input_frames[:,0,:,:,:],self.input_frames_low_scale[:,0,:,:,:]])
         for lstm_layer_id in xrange(self.layer_num_lstm):
             input_,lstm_encode_state[lstm_layer_id]=lstm_encode[lstm_layer_id](input_,lstm_encode_state[lstm_layer_id])
-	
-	input_ = self.input_frames[:,0,:,:,:]
-        lstm_pyramid = []
+        
+	input_=tf.concat(3,[self.input_frames[:,0,:,:,:],self.input_frames_low_scale[:,0,:,:,:]])
+	lstm_pyramid = []
         for lstm_layer_id in xrange(self.layer_num_lstm):
             input_,lstm_predict_state[lstm_layer_id]=lstm_predict[lstm_layer_id](input_,lstm_predict_state[lstm_layer_id])
             lstm_pyramid.append(input_)
-	y_cat = tf.concat(3,lstm_pyramid)
-        temp = ld.transpose_conv_layer(y_cat,1,1,1,"predict")
-
-	input_ = self.input_frames[:,0,:,:,:]	
+	
+	input_=tf.concat(3,[self.input_frames[:,0,:,:,:],self.input_frames_low_scale[:,0,:,:,:]])
 	lstm_pyramid_de = []
 	for lstm_layer_id in xrange(self.layer_num_lstm):
             input_,lstm_decode_state[lstm_layer_id]=lstm_decode[lstm_layer_id](input_,lstm_decode_state[lstm_layer_id])
             lstm_pyramid_de.append(input_)
+        
+	y_cat = tf.concat(3,lstm_pyramid)
+	temp = ld.transpose_conv_layer(y_cat,1,1,1,"predict")
+        
 	y_cat_de = tf.concat(3,lstm_pyramid_de)
         temp_de = ld.transpose_conv_layer(y_cat_de,1,1,1,"decode")
 	
+	#old code 
 	self.scope.reuse_variables()
 	def forward():
             """Make forward pass """
             for frame_id in xrange(self.length):
-                input_ = self.input_frames[:,frame_id,:,:,:]
+                input_ = tf.concat(3,[self.input_frames[:,frame_id,:,:,:],self.input_frames_low_scale[:,frame_id,:,:,:]])
 		for lstm_layer_id in xrange(self.layer_num_lstm):
                     input_,lstm_encode_state[lstm_layer_id]=lstm_encode[lstm_layer_id](input_,lstm_encode_state[lstm_layer_id])
 
             for i in xrange(self.layer_num_lstm):
                 lstm_predict_state[i]=lstm_encode_state[i]
-                lstm_decode_state[i] =lstm_encode_state[i]
+                lstm_decode_state[i] =lstm_decode_state[i]
 	    predicts = []
             for frame_id in xrange(self.future_seq_length):
 		if frame_id ==0:
-                    input_ = self.input_frames[:,-1,:,:,:]
+                    input_ = tf.concat(3,[self.input_frames[:,-1,:,:,:],self.future_frames_low_scale[:,frame_id,:,:,:]])
 		else:
-		    input_ = y_out
-		    #input_ = self.future_frames[:,frame_id-1,:,:,:]
+		    #input = y_out
+	            input_ = tf.concat(3,[y_out,self.future_frames_low_scale[:,frame_id,:,:,:]])
+		    #input_ = tf.concat(3,[self.future_frames[:,frame_id-1,:,:,:],self.future_frames_low_scale[:,frame_id,:,:,:]])
                 # adding all layer predictions together
                 lstm_pyramid = []
                 for lstm_layer_id in xrange(self.layer_num_lstm):
@@ -138,9 +154,9 @@ class G_scale_LSTM:
 	    decodes_temp = []
             for frame_id in range(self.length,0,-1):
                 if frame_id ==self.length:
-                    input_ = self.future_frames[:,0,:,:,:]
+                    input_ = tf.concat(3,[self.future_frames[:,0,:,:,:],self.input_frames_low_scale[:,frame_id-1,:,:,:]])
                 else:
-                    input_ = self.input_frames[:,frame_id,:,:,:]
+                    input_ = tf.concat(3,[self.input_frames[:,frame_id,:,:,:],self.input_frames_low_scale[:,frame_id-1,:,:,:]])
                 # adding all layer predictions together
                 lstm_pyramid = []
                 for lstm_layer_id in xrange(self.layer_num_lstm):
@@ -158,8 +174,8 @@ class G_scale_LSTM:
             decodes = tf.transpose(x_unwrap_de, [1,0,2,3,4])
 	    
 	    return predicts, decodes
-	   # return predicts
-	#self.preds = forward()
+
+
         self.preds,self.decodes = forward()
 
         """ loss and training op """
@@ -168,11 +184,16 @@ class G_scale_LSTM:
 	GT_label = tf.concat(1,[tf.ones([self.batch_size,1]),tf.zeros([self.batch_size,1])])	
 	entropy_loss = adv_loss(self.D_label,GT_label)
 	self.loss = mean_loss+entropy_loss+mean_loss_de
- 	#self.loss = mean_loss+entropy_loss
+ 
 	#self.loss = combined_loss(self.preds,self.future_frames,self.D_label)
 	temp_op = tf.train.AdamOptimizer(FLAGS.lr)
 	variable_collection = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                      self.scope_string)
+	if low_scale_graph is not None:
+	    if self.scope_string>"G_1":
+	        variable_collection += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,"G_1")
+	    variable_collection += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,"G_0")    
+	
 	gvs = temp_op.compute_gradients(self.loss,var_list=variable_collection)
 	capped_gvs = [(tf.clip_by_norm(grad, FLAGS.clip), var) for grad, var in gvs]
         self.train_op = temp_op.apply_gradients(capped_gvs)
@@ -182,4 +203,4 @@ class G_scale_LSTM:
 	entropy_loss_summary = tf.summary.scalar('loss_entropy',entropy_loss)
 	loss_summary = tf.summary.scalar('loss_G', self.loss)
         self.summary = tf.summary.merge([loss_summary,mean_loss_summary,entropy_loss_summary,mean_loss_de_summary])
-	#self.summary = tf.summary.merge([loss_summary,mean_loss_summary,entropy_loss_summary])
+	#self.summaries = tf.merge_summary([loss_summary])

@@ -13,6 +13,7 @@ import pdb
 import scipy.io as scipy_io
 
 from G_scale_LSTM import *
+#from G_scale_LSTM_temp import *
 #from D_scale_LSTM import *
 from D_scale_CNN import *
 from loss_functions import *
@@ -36,7 +37,7 @@ def train():
 	    pool_kernel_size.append([1,2,2,2,1])
 	    pool_kernel_size.append([1,2,2,2,1])
 	    pool_kernel_size.append([1,2,2,2,1])
-    	    D_model = D_scale_CNN(scope=scope,scale_index =0,height=20,width=18,length=20,batch_size =FLAGS.batch_size,layer_num_cnn=3, kernel_size=conv_kernel,kernel_num=kernel_num,pool_kernel_size = pool_kernel_size,layer_num_full=3,full_size =[3*3*3*32,1000,1],scope_string = "D_0")
+    	    D_model = D_scale_CNN(scope=scope,scale_index =0,height=20,width=18,length=20,batch_size =FLAGS.batch_size,layer_num_cnn=3, kernel_size=conv_kernel,kernel_num=kernel_num,pool_kernel_size = pool_kernel_size,layer_num_full=3,full_size =[3*3*3*32,100,1],scope_string = "D_0")
         # Build an initialization operation to run below.
         
         init = tf.initialize_all_variables()
@@ -48,12 +49,12 @@ def train():
         summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, graph_def=graph_def)
     	"""saver """
 	saver = tf.train.Saver(tf.all_variables()) 
-        saver.restore(sess,"/scratch/ys1297/ecog/adversarial_lstm/source/checkpoints/model.ckpt-24000")
+        saver.restore(sess,"/scratch/ys1297/ecog/adversarial_lstm/source/checkpoints/model.ckpt-16000")
+	#saver.restore(sess,"/scratch/ys1297/ecog/adversarial_lstm/source/checkpoints/model.ckpt-24000")
 	for step in xrange(FLAGS.max_step):
             #data_handler.Set_id(3000)
 	    dat = data_handler.GetBatch()
-    
-    
+    	    #dat = data_handler.Get_ordered_Batch()
             # training hyper parameters
             t = time.time()
             """ forward pass for G model """
@@ -90,7 +91,7 @@ def train():
     
             print("time per batch is " + str(elapsed))
             print(step)
-            if step %2000==0:
+            if step %1000==0:
 	    #print(d_predict)
 	        checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
 	        saver.save(sess, checkpoint_path, global_step=step)  

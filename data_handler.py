@@ -4,11 +4,66 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.ion()
-
+import tensorflow as tf
 import cPickle as pkl
 import sys
 import pdb
 import h5py
+import time
+from params import *
+def temporal_down_scale(tensor):
+    # tensor: batch_size,length,height,width,1
+    # note: the downsampler is mannually set to 2
+    if type(tensor).__module__ == np.__name__: #if numpy array
+        out_tensor = np.zeros([tensor.shape[0],tensor.shape[1]/2,tensor.shape[2],tensor.shape[3],tensor.shape[4]])
+	for i in range(0,tensor.shape[1],2):
+            out_tensor[:,i/2,:,:,:]= np.mean(tensor[:,i:i+2,:,:,:],axis=1) 
+    else:
+	original_shape = [FLAGS.batch_size,tensor.get_shape()[1].value,FLAGS.width,FLAGS.height,1]
+	#original_shape = [tensor.get_shape()[0].value,tensor.get_shape()[1].value,tensor.get_shape()[2].value,\
+        #tensor.get_shape()[3].value,tensor.get_shape()[4].value]
+	tensor = tf.reshape(tensor,original_shape[0:4])
+	out_tensor = tf.nn.avg_pool(tensor,ksize=[1,2,1,1],strides=[1,2,1,1],padding ='SAME')
+	out_tensor = tf.reshape(out_tensor,[original_shape[0],original_shape[1]/2,original_shape[2],original_shape[3],\
+	original_shape[4]])
+    return out_tensor
+
+def temporal_up_scale(tensor):
+    # tensor: batch_size,length,height,width,1
+    # note: the upsampler is mannually set to 2
+    if type(tensor).__module__ == np.__name__ : #if numpy array
+	tensor = np.swapaxes(tensor,1,4)
+        original_shape = [tensor.shape[0],tensor.shape[1],tensor.shape[2],tensor.shape[3],tensor.shape[4]]
+
+        up_scale_ = get_up_scale_matrix(tensor.shape[4]) 
+	tensor = np.dot(tensor.reshape([-1,tensor.shape[4]]),up_scale_)
+        tensor = np.reshape(tensor,original_shape[0:4]+[original_shape[4]*2])
+	tensor = np.swapaxes(tensor,1,4)
+    else:
+        tensor = tf.transpose(tensor,[0,4,2,3,1])
+	original_shape = [FLAGS.batch_size,1,FLAGS.width,FLAGS.height,tensor.get_shape()[4].value]
+	#original_shape = [tensor.get_shape()[0].value,tensor.get_shape()[1].value,tensor.get_shape()[2].value,\
+	#tensor.get_shape()[3].value,tensor.get_shape()[4].value]
+	up_scale_ = tf.constant(get_up_scale_matrix(original_shape[4]).astype('float32'))
+	tensor = tf.matmul(tf.reshape(tensor,[-1,original_shape[4]]),up_scale_)
+	tensor = tf.reshape(tensor,original_shape[0:4]+[original_shape[4]*2])
+	tensor = tf.transpose(tensor,[0,4,2,3,1])
+	 
+
+    return tensor
+def get_up_scale_matrix(n):
+    # get n *2n bilinear interpolation numpy matrix
+    out_matrix = np.zeros([n,2*n])
+    temp_array = np.array([0.25,0.75,0.75,0.25])
+    for temp in range(1,n-1):
+	out_matrix[temp,2*temp-1:2*temp+4-1] = temp_array
+    out_matrix[0,0:3] = np.array([1.25,0.75,0.25])
+    out_matrix[1,0:3] = np.array([-.25,0.25,0.75])
+    out_matrix[-1,-1:-4:-1] = np.array([1.25,0.75,0.25])
+    out_matrix[-2,-1:-4:-1] = np.array([-.25,0.25,0.75])
+    return out_matrix
+    
+	
 class VideoPatchDataHandler(object):
   def __init__(self,sequence_length=20,batch_size=80,down_sample_rate_=1,dataset_name='train'):
     stats = pkl.load(open('/scratch/ys1297/ecog/data/ECOG_4041_mean.pkl','r'))
@@ -80,7 +135,9 @@ class VideoPatchDataHandler(object):
       fut = fut/2.0+0.5
     if rec is not None:
       rec = rec/2.0+0.5
-    
+    # to adjust to multi scale
+    self.seq_length_ = data.shape[1] 
+
     if output_file is not None:
       name, ext = os.path.splitext(output_file)
       output_file1 = '%s_original%s' % (name, ext)
@@ -189,4 +246,32 @@ class VideoPatchDataHandler(object):
     plt.savefig(output_file3, bbox_inches='tight')
     return error_sum
 
+if __name__ == '__main__':
+    from params import *
+    data_handler = VideoPatchDataHandler(FLAGS.seq_length,FLAGS.batch_size,10,'valid')
+    data_handler.Set_id(1000)
+    dat = data_handler.Get_ordered_Batch()
+    tensor = tf.constant(dat)
+  
+    down_tensor = temporal_down_scale(tensor)
+    down_tensor = temporal_down_scale(down_tensor)
+    up_tensor = temporal_up_scale(down_tensor)
+    up_tensor = temporal_up_scale(up_tensor)
+    
+    sess = tf.Session()
+    t1 = time.time()
+    d_predict = sess.run([up_tensor])[0]
+    t2 = time.time()
+    print t2-t1
+    output_file = './imgs'+'/Ecog_test_tensorflow'+'.pdf'
+    data_handler.DisplayData_Ecog(dat,rec=d_predict[:,20:0:-1,:,:,],fut=d_predict[:,20:,:,:,:],case_id=14,output_file =output_file)
 
+    t1 = time.time()
+    down_dat = temporal_down_scale(dat)
+    down_dat = temporal_down_scale(down_dat)
+    up_dat = temporal_up_scale(down_dat)
+    up_dat = temporal_up_scale(up_dat)
+    t2 = time.time()
+    print t2-t1
+    output_file = './imgs'+'/Ecog_test_numpy'+'.pdf'
+    data_handler.DisplayData_Ecog(dat,rec=up_dat[:,20:0:-1,:,:,],fut=up_dat[:,20:,:,:,:],case_id=14,output_file =output_file)

@@ -90,8 +90,8 @@ class D_scale_CNN:
             for layer_id_,kernel_ in zip(xrange(self.layer_num_cnn),self.pool_kernel_size):
                 input_ = tf.nn.conv3d(input_, conv_W[layer_id_], strides=[1, 1, 1, 1,1], padding='SAME') + conv_b[layer_id_]
                 input_ = tf.nn.relu(input_)
-		input_ = tf.nn.max_pool3d(input_,ksize = kernel_,strides =[1, 2, 2, 2,1], padding='SAME')
-            preds  = tf.reshape(input_,[self.batch_size,-1])
+		input_ = tf.nn.max_pool3d(input_,ksize = kernel_,strides =kernel_, padding='SAME')
+	    preds  = tf.reshape(input_,[self.batch_size,-1])
             """Make mlp pass"""
 
             full_out_summary= []

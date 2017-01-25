@@ -1,10 +1,10 @@
 import tensorflow as tf 
 FLAGS = tf.app.flags.FLAGS
-tf.app.flags.DEFINE_string('train_dir', './checkpoints/test_cnn_1',
+tf.app.flags.DEFINE_string('train_dir', './checkpoints/test_cnn_scale_joint',
                             """dir to store trained net""")
-tf.app.flags.DEFINE_integer('seq_length', 20,
+tf.app.flags.DEFINE_integer('seq_length', 32,
                             """size of hidden layer""")
-tf.app.flags.DEFINE_integer('seq_start', 10,
+tf.app.flags.DEFINE_integer('seq_start', 16,
                             """ start of seq generation""")
 tf.app.flags.DEFINE_integer('max_step', 10000000,
                             """max num of steps""")
@@ -24,7 +24,13 @@ tf.app.flags.DEFINE_float('eps_decay_factor', .9,
                             """for norm clip""")
 tf.app.flags.DEFINE_float('eps_decay_after', 10000,
                             """for norm clip""")
-tf.app.flags.DEFINE_integer('batch_size', 80,
+tf.app.flags.DEFINE_integer('batch_size', 8,
                             """batch size for training""")
 tf.app.flags.DEFINE_float('weight_init', .1,
                             """weight init for fully connected layers""")
+tf.app.flags.DEFINE_integer('width', 20,
+                            """size of hidden layer""")
+tf.app.flags.DEFINE_integer('height', 18,
+                            """size of hidden layer""")
+
+

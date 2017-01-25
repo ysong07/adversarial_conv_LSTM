@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import pdb
 from tfutils import log10
-
+from params import *
 
 
 
@@ -50,6 +50,7 @@ def l2_loss(preds,targets):
     return tf.nn.l2_loss(preds-targets)
 
 def adv_loss(preds,labels):
+    #return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(preds,labels))/FLAGS.batch_size
     return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(preds,labels))
 #def adv_loss(preds, labels):
 #    """
